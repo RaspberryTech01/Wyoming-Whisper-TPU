@@ -1,3 +1,1 @@
-from .transcribe import cli
-
-cli()
+print("start")
