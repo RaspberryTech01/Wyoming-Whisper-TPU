@@ -5,9 +5,8 @@ import logging
 import os
 import tempfile
 import wave
-from typing import TYPE_CHECKING, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Optional
 
-import numpy as np
 from wyoming.asr import Transcribe, Transcript
 from wyoming.audio import AudioChunk, AudioStop
 from wyoming.event import Event
@@ -28,11 +27,11 @@ class FasterWhisperEventHandler(AsyncEventHandler):
     def __init__(
         self,
         wyoming_info: Info,
-        # cli_args: argparse.Namespace,
+        cli_args: argparse.Namespace,
         model: any,
         model_lock: asyncio.Lock,
         temperature: float,
-        language: str,
+        language: str = "en",
         *args,
         initial_prompt: Optional[str] = None,
         **kwargs,
@@ -40,7 +39,7 @@ class FasterWhisperEventHandler(AsyncEventHandler):
         super().__init__(*args, **kwargs)
         _LOGGER.info("Starting Handler")
 
-        # self.cli_args = cli_args
+        self.cli_args = cli_args
         self.wyoming_info_event = wyoming_info.event()
         self.model = model
         self.model_lock = model_lock

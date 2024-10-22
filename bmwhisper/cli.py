@@ -26,7 +26,7 @@ from .utils import (
 from .version import __version__
 
 
-async def run_cli():
+async def run_cli() -> None:
     start_time = time.time()
     from . import available_models
 
@@ -123,7 +123,7 @@ async def run_cli():
                             url="https://huggingface.co/Systran",
                         ),
                         installed=True,
-                        languages="en",
+                        languages=LANGUAGES,
                         version=__version__,
                     )
                 ],
@@ -140,10 +140,10 @@ async def run_cli():
         partial(
             FasterWhisperEventHandler,
             wyoming_info,
+            args,
             model,
             model_lock,
             temperature,
-            language="en",
             initial_prompt=args["initial_prompt"],
         )
     )
