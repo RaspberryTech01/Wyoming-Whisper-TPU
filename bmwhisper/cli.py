@@ -98,6 +98,11 @@ async def run_cli() -> None:
 
     # We need to insert Wyoming protocol similar to wyoming-faster-whisper
     
+    print("TEST")
+    print(tuple(LANGUAGES.keys()))
+    print(type(LANGUAGES.keys()))
+    
+    
     wyoming_info = Info(
         asr=[
             AsrProgram(
@@ -118,7 +123,7 @@ async def run_cli() -> None:
                             url="https://huggingface.co/Systran",
                         ),
                         installed=True,
-                        languages=LANGUAGES,
+                        languages=tuple(LANGUAGES.keys()),
                         version=__version__,
                     )
                 ],

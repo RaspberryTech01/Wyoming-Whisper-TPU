@@ -35,11 +35,11 @@ class FasterWhisperEventHandler(AsyncEventHandler):
         **kwargs,
     ) -> None:
         # # Weird problem reader and writer, had to extract separately
-        # reader_writer, *rest = args
-        # writer = reader_writer
-        # reader = reader_writer._reader
+        reader_writer, *rest = args
+        writer = reader_writer
+        reader = reader_writer._reader
 
-        super().__init__(*args, **kwargs)
+        super().__init__(reader, writer)
         _LOGGER.info("Starting Handler")
 
         self.cli_args = cli_args
@@ -52,8 +52,10 @@ class FasterWhisperEventHandler(AsyncEventHandler):
         self._wav_dir = tempfile.TemporaryDirectory()
         self._wav_path = os.path.join(self._wav_dir.name, "speech.wav")
         self._wav_file: Optional[wave.Wave_write] = None
+        print("BERE2")
 
     async def handle_event(self, event: Event) -> bool:
+        print("HANDLE")
         if AudioChunk.is_type(event.type):
             chunk = AudioChunk.from_event(event)
 
@@ -96,7 +98,7 @@ class FasterWhisperEventHandler(AsyncEventHandler):
 
             # Reset
             self._language = self.cli_args.language
-
+            print("HANDLE2")
             return False
 
         if Transcribe.is_type(event.type):
@@ -104,11 +106,14 @@ class FasterWhisperEventHandler(AsyncEventHandler):
             if transcribe_event.language:
                 self._language = transcribe_event.language
                 _LOGGER.debug("Language set to %s", transcribe_event.language)
+            print("HANDLE3")
             return True
 
+        print("HANDLE4")
         if Describe.is_type(event.type):
+            print(self.wyoming_info_event)
             await self.write_event(self.wyoming_info_event)
             _LOGGER.debug("Sent info")
             return True
-
+        print("HANDLE5")
         return True
