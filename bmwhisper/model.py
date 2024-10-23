@@ -231,7 +231,7 @@ class Whisper(nn.Module):
     def __init__(self, dims: ModelDimensions, args):
         super().__init__()
         self.dims = dims
-        self.model_name = args["model_name"]
+        self.model_name = args.model_name
         self.encoder = None
         self.decoder = None
         self.encoder_infer = None
@@ -239,10 +239,10 @@ class Whisper(nn.Module):
         self.decoder_main_infer = None
         self.decoder_post_infer = None
         self.decoder_loop_infer = None
-        self.bmodel_dir = args["bmodel_dir"]
-        self.beam_size = args["beam_size"]
-        self.padding_size = args["padding_size"]
-        self.chip_mode = args["chip_mode"]
+        self.bmodel_dir = args.bmodel_dir
+        self.beam_size = args.beam_size
+        self.padding_size = args.padding_size
+        self.chip_mode = args.chip_mode
 
         # use the last half layers for alignment by default; see `set_alignment_heads()` below
         all_heads = torch.zeros(

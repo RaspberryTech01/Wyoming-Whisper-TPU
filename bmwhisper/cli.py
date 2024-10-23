@@ -10,15 +10,10 @@ import torch
 from wyoming.info import AsrModel, AsrProgram, Attribution, Info
 from wyoming.server import AsyncServer
 
-from .decoding import DecodingOptions, DecodingResult
+from . import load_model
 from .wyoming_handler import FasterWhisperEventHandler
-from .timing import add_word_timestamps
-from .tokenizer import LANGUAGES, TO_LANGUAGE_CODE, get_tokenizer
+from .tokenizer import LANGUAGES, TO_LANGUAGE_CODE
 from .utils import (
-    exact_div,
-    format_timestamp,
-    get_writer,
-    make_safe,
     optional_float,
     optional_int,
     str2bool,
@@ -70,36 +65,36 @@ async def run_cli() -> None:
     parser.add_argument("--loop_profile", action="store_true", help="whether to print loop times")
     # fmt: on
 
-    args = parser.parse_args().__dict__
-    args["model_name"] = args.pop("model")
-    output_dir: str = args.pop("output_dir")
-    output_format: str = args.pop("output_format")
-    loop_profile = args.pop("loop_profile")
+    args = parser.parse_args()
+    args.model_name = args.model
+    output_dir: str = args.output_dir
+    output_format: str = args.output_format
+    loop_profile = args.loop_profile
     os.makedirs(output_dir, exist_ok=True)
 
-    model_name = args["model_name"]
-    if model_name.endswith(".en") and args["language"] not in {"en", "English"}:
-        if args["language"] is not None:
+    model_name = args.model_name
+    if model_name.endswith(".en") and args.language not in {"en", "English"}:
+        if args.language is not None:
             warnings.warn(
-                f"{model_name} is an English-only model but receipted '{args['language']}'; using English instead."
+                f"{model_name} is an English-only model but receipted '{args.language}'; using English instead."
             )
-        args["language"] = "en"
+        args.language = "en"
 
-    temperature = args.pop("temperature")
-    if (increment := args.pop("temperature_increment_on_fallback")) is not None:
+    temperature = args.temperature
+    if (increment := args.temperature_increment_on_fallback) is not None:
         temperature = tuple(np.arange(temperature, 1.0 + 1e-6, increment))
     else:
         temperature = [temperature]
 
-    if (threads := args.pop("threads")) > 0:
+    if (threads := args.threads) > 0:
         torch.set_num_threads(threads)
 
-    from . import load_model
+    
 
     model = load_model(args) 
-    pop_list = ["model_name", "model_dir", "bmodel_dir", "chip_mode"]
-    for arg in pop_list:
-        args.pop(arg)
+    # pop_list = ["model_name", "model_dir", "bmodel_dir", "chip_mode"]
+    # for arg in pop_list:
+    #     args.pop(arg)
 
     # We need to insert Wyoming protocol similar to wyoming-faster-whisper
     
@@ -144,7 +139,7 @@ async def run_cli() -> None:
             model,
             model_lock,
             temperature,
-            initial_prompt=args["initial_prompt"],
+            initial_prompt=args.initial_prompt,
         )
     )
 

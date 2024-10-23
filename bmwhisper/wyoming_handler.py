@@ -14,9 +14,7 @@ from wyoming.info import Describe, Info
 from wyoming.server import AsyncEventHandler
 
 from .transcribe import transcribe
-
-if TYPE_CHECKING:
-    from .model import Whisper
+from .model import Whisper
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,7 +26,7 @@ class FasterWhisperEventHandler(AsyncEventHandler):
         self,
         wyoming_info: Info,
         cli_args: argparse.Namespace,
-        model: any,
+        model: Whisper,
         model_lock: asyncio.Lock,
         temperature: float,
         language: str = "en",
@@ -36,6 +34,11 @@ class FasterWhisperEventHandler(AsyncEventHandler):
         initial_prompt: Optional[str] = None,
         **kwargs,
     ) -> None:
+        # # Weird problem reader and writer, had to extract separately
+        # reader_writer, *rest = args
+        # writer = reader_writer
+        # reader = reader_writer._reader
+
         super().__init__(*args, **kwargs)
         _LOGGER.info("Starting Handler")
 

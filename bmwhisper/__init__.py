@@ -120,7 +120,7 @@ def load_model(
         The Whisper ASR model instance
     """
 
-    name = args["model_name"]
+    name = args.model_name
     
     if name == "base":
         dims = ModelDimensions(
