@@ -66,6 +66,7 @@ async def run_cli() -> None:
     # fmt: on
 
     args = parser.parse_args()
+    args_dict = parser.parse_args().__dict__
     args.model_name = args.model
     output_dir: str = args.output_dir
     output_format: str = args.output_format
@@ -131,6 +132,10 @@ async def run_cli() -> None:
         ],
     )
     
+    pop_list = ["model", "model_dir", "bmodel_dir", "output_dir", "output_format", "chip_mode", "audio", "temperature_increment_on_fallback", "threads", "loop_profile", "max_line_width", "max_line_count", "highlight_words"]
+    for arg in pop_list:
+        args_dict.pop(arg)
+    
     # Load model
 
     server = AsyncServer.from_uri('tcp://0.0.0.0:10300')
@@ -140,7 +145,7 @@ async def run_cli() -> None:
         partial(
             FasterWhisperEventHandler,
             wyoming_info,
-            args,
+            args_dict,
             model,
             model_lock,
             temperature,

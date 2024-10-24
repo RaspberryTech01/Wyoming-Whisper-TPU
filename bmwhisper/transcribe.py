@@ -1,12 +1,12 @@
-import argparse
-import os
+# import argparse
+# import os
 import warnings
 from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import numpy as np
 import torch
 import tqdm
-import time
+# import time
 
 from .audio import (
     FRAMES_PER_SECOND,
@@ -113,6 +113,9 @@ def transcribe(
     # Pad 30-seconds of silence to the input audio, for slicing
     mel = log_mel_spectrogram(audio, model.dims.n_mels, padding=N_SAMPLES)
     content_frames = mel.shape[-1] - N_FRAMES
+    
+    print("IN TRANSCRIBE")
+    print(decode_options.get("language", None))
 
     if decode_options.get("language", None) is None:
         if not model.is_multilingual:
@@ -130,8 +133,13 @@ def transcribe(
                     f"Detected language: {LANGUAGES[decode_options['language']].title()}\n"
                 )
 
+    print("IN TRANSCRIBE2")
+    
     language: str = decode_options["language"]
     task: str = decode_options.get("task", "transcribe")
+    
+    print("IN TRANSCRIBE3")
+    
     tokenizer = get_tokenizer(
         model.is_multilingual,
         num_languages=model.num_languages,
@@ -141,12 +149,14 @@ def transcribe(
     if word_timestamps and task == "translate":
         warnings.warn("Word-level timestamps on translations may not be reliable.")
 
+    print("IN TRANSCRIBE4")
+
     def decode_with_fallback(segment: torch.Tensor) -> DecodingResult:
         temperatures = (
             [temperature] if isinstance(temperature, (int, float)) else temperature
         )
         decode_result = None
-
+        print("DECODE")
         for t in temperatures:
             kwargs = {**decode_options}
             if t > 0:
@@ -156,8 +166,8 @@ def transcribe(
             else:
                 # disable best_of when t == 0
                 kwargs.pop("best_of", None)
-            # print('{:=^100s}'.format(f' decode_with_fallback temperatures {t} '))
-            # print(f"kwargs: {kwargs}")
+            print('{:=^100s}'.format(f' decode_with_fallback temperatures {t} '))
+            print(f"kwargs: {kwargs}")
             options = DecodingOptions(**kwargs, temperature=t)
             decode_result = model.decode(segment, options)
 
@@ -179,8 +189,12 @@ def transcribe(
                 needs_fallback = False  # silence
             if not needs_fallback:
                 break
-
+            
+        print(decode_result)
         return decode_result
+    
+    
+    
 
     seek = 0
     input_stride = exact_div(
@@ -193,6 +207,8 @@ def transcribe(
     all_segments = []
     prompt_reset_since = 0
 
+    print("IN TRANSCRIBE5")
+    
     if initial_prompt is not None:
         initial_prompt_tokens = tokenizer.encode(" " + initial_prompt.strip())
         all_tokens.extend(initial_prompt_tokens)
@@ -215,24 +231,35 @@ def transcribe(
             "compression_ratio": result.compression_ratio,
             "no_speech_prob": result.no_speech_prob,
         }
+    print("IN TRANSCRIBE6")
         
     # show the progress bar when verbose is False (if True, transcribed text will be printed)
     with tqdm.tqdm(
         total=content_frames, unit="frames", disable=verbose is not False
     ) as pbar:
         last_speech_timestamp = 0.0
+        print("IN TRANSCRIBE6.1")
+        
         while seek < content_frames:
             time_offset = float(seek * HOP_LENGTH / SAMPLE_RATE)
             mel_segment = mel[:, seek : seek + N_FRAMES]
             segment_size = min(N_FRAMES, content_frames - seek)
             segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE
             mel_segment = pad_or_trim(mel_segment, N_FRAMES).to(dtype)
-
+            print("IN TRANSCRIBE6.2")
+            
             decode_options["prompt"] = all_tokens[prompt_reset_since:]
             # import pdb; pdb.set_trace()
+            print("IN TRANSCRIBE6.21")
+            
             result: DecodingResult = decode_with_fallback(mel_segment)
+            print("IN TRANSCRIBE6.25")
+            
             tokens = torch.tensor(result.tokens)
+            print("IN TRANSCRIBE6.26")
+            
             # print(f"result: {result}")
+            print("IN TRANSCRIBE6.3")
 
             if no_speech_threshold is not None:
                 # no voice activity check
@@ -247,12 +274,14 @@ def transcribe(
                 if should_skip:
                     seek += segment_size  # fast-forward to the next segment boundary
                     continue
-
+            print("IN TRANSCRIBE6.4")
+                
             previous_seek = seek
             current_segments = []
 
             timestamp_tokens: torch.Tensor = tokens.ge(tokenizer.timestamp_begin)
             single_timestamp_ending = timestamp_tokens[-2:].tolist() == [False, True]
+            print("IN TRANSCRIBE6.5")
 
             consecutive = torch.where(timestamp_tokens[:-1] & timestamp_tokens[1:])[0]
             consecutive.add_(1)
@@ -280,6 +309,7 @@ def transcribe(
                         )
                     )
                     last_slice = current_slice
+                print("IN TRANSCRIBE6.6")
 
                 if single_timestamp_ending:
                     # single timestamp at the end means no speech after the last timestamp.
@@ -290,7 +320,11 @@ def transcribe(
                         tokens[last_slice - 1].item() - tokenizer.timestamp_begin
                     )
                     seek += last_timestamp_pos * input_stride
+                print("IN TRANSCRIBE6.8")
+                
             else:
+                print("IN TRANSCRIBE6.9")
+                
                 duration = segment_duration
                 timestamps = tokens[timestamp_tokens.nonzero().flatten()]
                 if (
@@ -302,6 +336,7 @@ def transcribe(
                         timestamps[-1].item() - tokenizer.timestamp_begin
                     )
                     duration = last_timestamp_pos * time_precision
+                print("IN TRANSCRIBE6.10")
 
                 current_segments.append(
                     new_segment(
@@ -314,6 +349,8 @@ def transcribe(
                 seek += segment_size
 
             if word_timestamps:
+                print("IN TRANSCRIBE6.12")
+                
                 add_word_timestamps(
                     segments=current_segments,
                     model=model,
@@ -335,6 +372,7 @@ def transcribe(
                     )
                     if seek_shift > 0:
                         seek = previous_seek + seek_shift
+                print("IN TRANSCRIBE6.13")
 
             if verbose:
                 for segment in current_segments:
@@ -348,7 +386,8 @@ def transcribe(
                     segment["text"] = ""
                     segment["tokens"] = []
                     segment["words"] = []
-
+            print("IN TRANSCRIBE6.15")
+            
             all_segments.extend(
                 [
                     {"id": i, **segment}
@@ -357,6 +396,8 @@ def transcribe(
                     )
                 ]
             )
+            print("IN TRANSCRIBE6.16")
+            
             all_tokens.extend(
                 [token for segment in current_segments for token in segment["tokens"]]
             )
@@ -364,9 +405,12 @@ def transcribe(
             if not condition_on_previous_text or result.temperature > 0.5:
                 # do not feed the prompt tokens if a high temperature was used
                 prompt_reset_since = len(all_tokens)
+            print("IN TRANSCRIBE6.17")
 
             # update progress bar
             pbar.update(min(content_frames, seek) - previous_seek)
+
+    print("IN TRANSCRIBE7")
 
     return dict(
         text=tokenizer.decode(all_tokens[len(initial_prompt_tokens) :]),

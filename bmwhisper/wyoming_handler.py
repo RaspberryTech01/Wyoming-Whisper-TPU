@@ -52,7 +52,7 @@ class FasterWhisperEventHandler(AsyncEventHandler):
         self._wav_dir = tempfile.TemporaryDirectory()
         self._wav_path = os.path.join(self._wav_dir.name, "speech.wav")
         self._wav_file: Optional[wave.Wave_write] = None
-        print("BERE2")
+        
 
     async def handle_event(self, event: Event) -> bool:
         print("HANDLE")
@@ -79,8 +79,12 @@ class FasterWhisperEventHandler(AsyncEventHandler):
             self._wav_file = None
 
             async with self.model_lock:
-              self.model.init_cnt()
-              segments = transcribe(self.model, self._wav_path, temperature=self.temperature)
+                self.model.init_cnt()
+                print("IN TEXT END1")
+                print(self.cli_args)
+                segments = transcribe(self.model, self._wav_path, **self.cli_args)
+                print("SEGMENTS")
+                print(segments)
               # result = transcribe(self.model, self._wav_path, temperature=temperature, **args)
               
               # segments, _info = self.model.transcribe(
@@ -89,17 +93,19 @@ class FasterWhisperEventHandler(AsyncEventHandler):
               #     language=self._language,
               #     initial_prompt=self.initial_prompt,
               # )
+                print("IN TEXT END2")
 
-            text = " ".join(segment.text for segment in segments)
-            _LOGGER.info(text)
+                text = segments["text"]
+                _LOGGER.info(text)
 
-            await self.write_event(Transcript(text=text).event())
-            _LOGGER.debug("Completed request")
+                await self.write_event(Transcript(text=text).event())
+                _LOGGER.debug("Completed request")
 
-            # Reset
-            self._language = self.cli_args.language
-            print("HANDLE2")
-            return False
+                # Reset
+                self._language = self.cli_args["language"]
+                self
+                print("HANDLE2")
+                return False
 
         if Transcribe.is_type(event.type):
             transcribe_event = Transcribe.from_event(event)
