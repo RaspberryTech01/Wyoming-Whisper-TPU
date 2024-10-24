@@ -36,7 +36,7 @@ setup(
         )
     ],
     entry_points={
-        "console_scripts": ["bmwhisper=bmwhisper.transcribe:cli"],
+        "console_scripts": ["bmwhisper=bmwhisper.cli:run"],
     },
     include_package_data=True,
     extras_require={"dev": ["pytest", "scipy", "black", "flake8", "isort"]},
