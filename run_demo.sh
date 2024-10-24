@@ -1,1 +1,2 @@
-python run.py test/demo.wav --inference --use_kvcache --quant --fp16
+export LOG_LEVEL=-1
+python run.py test/demo.wav

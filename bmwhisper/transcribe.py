@@ -1,12 +1,12 @@
-import argparse
-import os
+# import argparse
+# import os
 import warnings
 from typing import TYPE_CHECKING, Optional, Tuple, Union
 
 import numpy as np
 import torch
 import tqdm
-import time
+# import time
 
 from .audio import (
     FRAMES_PER_SECOND,
@@ -107,30 +107,11 @@ def transcribe(
     A dictionary containing the resulting text ("text") and segment-level details ("segments"), and
     the spoken language ("language"), which is detected when `decode_options["language"]` is None.
     """
-    dtype = torch.float32
-    if model.fp16:
-        dtype = torch.float16
-    # dtype = torch.float16 if decode_options.get("fp16", True) else torch.float32
-    # if not model.inference:
-    #     if dtype == torch.float16:
-    #         warnings.warn("FP16 is not supported on CPU; using FP32 instead")
-    #         dtype = torch.float32
 
-    # if model.device == torch.device("cpu"): # TODO delete gpu judgment
-    #     if torch.cuda.is_available():
-    #         warnings.warn("Performing inference on CPU when CUDA is available")
-    #     if dtype == torch.float16:
-    #         warnings.warn("FP16 is not supported on CPU; using FP32 instead")
-    #         dtype = torch.float32
-
-    # if dtype == torch.float32:
-    #     decode_options["fp16"] = False
-    
-    # import pdb; pdb.set_trace()
+    dtype = torch.float16
 
     # Pad 30-seconds of silence to the input audio, for slicing
-    # import pdb; pdb.set_trace()
-    mel = log_mel_spectrogram(audio, padding=N_SAMPLES) # a torch only part beacause of torch.hann_window, torch.stft etc.
+    mel = log_mel_spectrogram(audio, model.dims.n_mels, padding=N_SAMPLES)
     content_frames = mel.shape[-1] - N_FRAMES
 
     if decode_options.get("language", None) is None:
@@ -141,19 +122,23 @@ def transcribe(
                 print(
                     "Detecting language using up to the first 30 seconds. Use `--language` to specify the language"
                 )
-            # mel_segment = pad_or_trim(mel, N_FRAMES).to(model.device).to(dtype)
             mel_segment = pad_or_trim(mel, N_FRAMES).to(dtype)
             _, probs = model.detect_language(mel_segment)
             decode_options["language"] = max(probs, key=probs.get)
             if verbose is not None:
                 print(
-                    f"Detected language: {LANGUAGES[decode_options['language']].title()}"
+                    f"Detected language: {LANGUAGES[decode_options['language']].title()}\n"
                 )
-
+    
     language: str = decode_options["language"]
     task: str = decode_options.get("task", "transcribe")
-    tokenizer = get_tokenizer(model.is_multilingual, language=language, task=task)
-
+    
+    tokenizer = get_tokenizer(
+        model.is_multilingual,
+        num_languages=model.num_languages,
+        language=language,
+        task=task,
+    )
     if word_timestamps and task == "translate":
         warnings.warn("Word-level timestamps on translations may not be reliable.")
 
@@ -162,7 +147,6 @@ def transcribe(
             [temperature] if isinstance(temperature, (int, float)) else temperature
         )
         decode_result = None
-        # import pdb; pdb.set_trace()
 
         for t in temperatures:
             kwargs = {**decode_options}
@@ -173,9 +157,8 @@ def transcribe(
             else:
                 # disable best_of when t == 0
                 kwargs.pop("best_of", None)
-            # print('{:=^80s}'.format(f' decode_with_fallback temperatures {t} '))
+            # print('{:=^100s}'.format(f' decode_with_fallback temperatures {t} '))
             # print(f"kwargs: {kwargs}")
-
             options = DecodingOptions(**kwargs, temperature=t)
             decode_result = model.decode(segment, options)
 
@@ -197,9 +180,10 @@ def transcribe(
                 needs_fallback = False  # silence
             if not needs_fallback:
                 break
-
+    
         return decode_result
-
+    
+    
     seek = 0
     input_stride = exact_div(
         N_FRAMES, model.dims.n_audio_ctx
@@ -210,7 +194,7 @@ def transcribe(
     all_tokens = []
     all_segments = []
     prompt_reset_since = 0
-
+    
     if initial_prompt is not None:
         initial_prompt_tokens = tokenizer.encode(" " + initial_prompt.strip())
         all_tokens.extend(initial_prompt_tokens)
@@ -233,23 +217,27 @@ def transcribe(
             "compression_ratio": result.compression_ratio,
             "no_speech_prob": result.no_speech_prob,
         }
-
+        
     # show the progress bar when verbose is False (if True, transcribed text will be printed)
     with tqdm.tqdm(
         total=content_frames, unit="frames", disable=verbose is not False
     ) as pbar:
         last_speech_timestamp = 0.0
+        
         while seek < content_frames:
             time_offset = float(seek * HOP_LENGTH / SAMPLE_RATE)
             mel_segment = mel[:, seek : seek + N_FRAMES]
             segment_size = min(N_FRAMES, content_frames - seek)
             segment_duration = segment_size * HOP_LENGTH / SAMPLE_RATE
             mel_segment = pad_or_trim(mel_segment, N_FRAMES).to(dtype)
-
+            
             decode_options["prompt"] = all_tokens[prompt_reset_since:]
             # import pdb; pdb.set_trace()
+            
             result: DecodingResult = decode_with_fallback(mel_segment)
+            
             tokens = torch.tensor(result.tokens)
+            
             # print(f"result: {result}")
 
             if no_speech_threshold is not None:
@@ -265,7 +253,7 @@ def transcribe(
                 if should_skip:
                     seek += segment_size  # fast-forward to the next segment boundary
                     continue
-
+                
             previous_seek = seek
             current_segments = []
 
@@ -308,6 +296,7 @@ def transcribe(
                         tokens[last_slice - 1].item() - tokenizer.timestamp_begin
                     )
                     seek += last_timestamp_pos * input_stride
+                
             else:
                 duration = segment_duration
                 timestamps = tokens[timestamp_tokens.nonzero().flatten()]
@@ -366,7 +355,7 @@ def transcribe(
                     segment["text"] = ""
                     segment["tokens"] = []
                     segment["words"] = []
-
+            
             all_segments.extend(
                 [
                     {"id": i, **segment}
@@ -375,6 +364,7 @@ def transcribe(
                     )
                 ]
             )
+            
             all_tokens.extend(
                 [token for segment in current_segments for token in segment["tokens"]]
             )
@@ -391,136 +381,3 @@ def transcribe(
         segments=all_segments,
         language=language,
     )
-
-
-def cli():
-    start_time = time.time()
-    from . import available_models
-
-    # fmt: off
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("audio", nargs="+", type=str, help="audio file(s) to transcribe")
-    parser.add_argument("--model", default="small", choices=available_models(), help="name of the Whisper model to use")
-    parser.add_argument("--model_dir", type=str, default=None, help="the path to save model files; uses ~/.cache/whisper by default")
-    parser.add_argument("--bmodel_dir", type=str, default="./bmodel", help="the path to save model files; uses ./bmodel by default")
-    # parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu", help="device to use for PyTorch inference")
-    parser.add_argument("--output_dir", "-o", type=str, default=".", help="directory to save the outputs")
-    parser.add_argument("--output_format", "-f", type=str, default="all", choices=["txt", "vtt", "srt", "tsv", "json", "all"], help="format of the output file; if not specified, all available formats will be produced")
-    parser.add_argument("--verbose", type=str2bool, default=True, help="whether to print out the progress and debug messages")
-
-    parser.add_argument("--task", type=str, default="transcribe", choices=["transcribe", "translate"], help="whether to perform X->X speech recognition ('transcribe') or X->English translation ('translate')")
-    parser.add_argument("--language", type=str, default=None, choices=sorted(LANGUAGES.keys()) + sorted([k.title() for k in TO_LANGUAGE_CODE.keys()]), help="language spoken in the audio, specify None to perform language detection")
-
-    parser.add_argument("--temperature", type=float, default=0, help="temperature to use for sampling")
-    parser.add_argument("--best_of", type=optional_int, default=5, help="number of candidates when sampling with non-zero temperature")
-    parser.add_argument("--beam_size", type=optional_int, default=5, help="number of beams in beam search, only applicable when temperature is zero")
-    parser.add_argument("--patience", type=float, default=None, help="optional patience value to use in beam decoding, as in https://arxiv.org/abs/2204.05424, the default (1.0) is equivalent to conventional beam search")
-    parser.add_argument("--length_penalty", type=float, default=None, help="optional token length penalty coefficient (alpha) as in https://arxiv.org/abs/1609.08144, uses simple length normalization by default")
-
-    parser.add_argument("--suppress_tokens", type=str, default="-1", help="comma-separated list of token ids to suppress during sampling; '-1' will suppress most special characters except common punctuations")
-    parser.add_argument("--initial_prompt", type=str, default=None, help="optional text to provide as a prompt for the first window.")
-    parser.add_argument("--condition_on_previous_text", type=str2bool, default=True, help="if True, provide the previous output of the model as a prompt for the next window; disabling may make the text inconsistent across windows, but the model becomes less prone to getting stuck in a failure loop")
-    # parser.add_argument("--fp16", type=str2bool, default=False, help="whether to perform inference in fp16; True by default")
-    parser.add_argument("--fp16", action="store_true", help="whether to perform inference in fp16")
-
-    parser.add_argument("--temperature_increment_on_fallback", type=optional_float, default=0.2, help="temperature to increase when falling back when the decoding fails to meet either of the thresholds below")
-    parser.add_argument("--compression_ratio_threshold", type=optional_float, default=2.4, help="if the gzip compression ratio is higher than this value, treat the decoding as failed")
-    parser.add_argument("--logprob_threshold", type=optional_float, default=-1.0, help="if the average log probability is lower than this value, treat the decoding as failed")
-    parser.add_argument("--no_speech_threshold", type=optional_float, default=0.6, help="if the probability of the <|nospeech|> token is higher than this value AND the decoding has failed due to `logprob_threshold`, consider the segment as silence")
-    parser.add_argument("--word_timestamps", type=str2bool, default=False, help="(experimental) extract word-level timestamps and refine the results based on them")
-    parser.add_argument("--prepend_punctuations", type=str, default="\"\'“¿([{-", help="if word_timestamps is True, merge these punctuation symbols with the next word")
-    parser.add_argument("--append_punctuations", type=str, default="\"\'.。,，!！?？:：”)]}、", help="if word_timestamps is True, merge these punctuation symbols with the previous word")
-    parser.add_argument("--highlight_words", type=str2bool, default=False, help="(requires --word_timestamps True) underline each word as it is spoken in srt and vtt")
-    parser.add_argument("--max_line_width", type=optional_int, default=None, help="(requires --word_timestamps True) the maximum number of characters in a line before breaking the line")
-    parser.add_argument("--max_line_count", type=optional_int, default=None, help="(requires --word_timestamps True) the maximum number of lines in a segment")
-    parser.add_argument("--threads", type=optional_int, default=0, help="number of threads used by torch for CPU inference; supercedes MKL_NUM_THREADS/OMP_NUM_THREADS")
-    parser.add_argument("--padding_size", type=optional_int, default=448, help="max pre-allocation size for the key-value cache")
-    parser.add_argument("--inference", action="store_true",help="whether to perform inference or not")
-    parser.add_argument("--export_onnx", action="store_true", help="whether to export onnx model or not")
-    parser.add_argument("--use_kvcache", action="store_true", help="whether to use key-value cache or not")
-    parser.add_argument("--split", action="store_true", help="whether to split the decoder model")
-    parser.add_argument("--quant", action="store_true", help="whether to quant the inputs and outputs of model")
-    parser.add_argument("--log", action="store_true", help="whether to log the inputs and outputs of model")
-    parser.add_argument("--runtime", type=str, default="untool", help="whether to use untool or SGInfer")
-    
-    # fmt: on
-
-    args = parser.parse_args().__dict__
-    # import pdb; pdb.set_trace()
-    # model_name: str = args.pop("model")
-    # model_dir: str = args.pop("model_dir")
-    # device: str = args.pop("device")
-    # inference: bool = args.pop("inference")
-    # export_onnx: bool = args.pop("export_onnx")
-    args["model_name"] = args.pop("model")
-    output_dir: str = args.pop("output_dir")
-    output_format: str = args.pop("output_format")
-    device: str = "cpu"
-    os.makedirs(output_dir, exist_ok=True)
-
-    assert not (args["inference"] and args["export_onnx"]), "inference and export cannot be True at the same time"
-
-    model_name = args["model_name"]
-    if model_name.endswith(".en") and args["language"] not in {"en", "English"}:
-        if args["language"] is not None:
-            warnings.warn(
-                f"{model_name} is an English-only model but receipted '{args['language']}'; using English instead."
-            )
-        args["language"] = "en"
-
-    temperature = args.pop("temperature")
-    if (increment := args.pop("temperature_increment_on_fallback")) is not None:
-        temperature = tuple(np.arange(temperature, 1.0 + 1e-6, increment))
-    else:
-        temperature = [temperature]
-
-    if (threads := args.pop("threads")) > 0:
-        torch.set_num_threads(threads)
-
-    from . import load_model
-
-    model = load_model(args) 
-    pop_list = ["model_name", "model_dir", "bmodel_dir", "inference", "export_onnx", "use_kvcache", "split", "quant", "log", "runtime"]
-    for arg in pop_list:
-        args.pop(arg)
-
-    writer = get_writer(output_format, output_dir)
-    word_options = ["highlight_words", "max_line_count", "max_line_width"]
-    if not args["word_timestamps"]:
-        for option in word_options:
-            if args[option]:
-                parser.error(f"--{option} requires --word_timestamps True")
-    if args["max_line_count"] and not args["max_line_width"]:
-        warnings.warn("--max_line_count has no effect without --max_line_width")
-    writer_args = {arg: args.pop(arg) for arg in word_options}
-    for audio_path in args.pop("audio"):
-        result = transcribe(model, audio_path, temperature=temperature, **args)
-        writer(result, audio_path, writer_args)
-    print("{:=^80}".format(f" End "))
-    print(f"total tpu inference time {model.time}s")
-    print(f"call encoder times: {model.call_encoder}")
-    print(f"call logits decoder times: {model.call_logits_decoder}")
-    print(f"call decoder firstly times: {model.call_decoder_firstly}")
-    print(f"call decoder loop times: {model.call_decoder_loop}")
-    print("--- %s seconds ---" % (time.time() - start_time))
-
-    # if model.inference:
-    #     model.tool.destroy_un_runtime(model.runtime3)
-    #     model.tool.destroy_un_runtime(model.runtime4)
-    #     model.tool.destroy_un_runtime(model.runtime5)
-    #     for i in range(model.dims.n_text_layer * 2):
-    #         model.tool.destroy_un_runtime(model.kvcache_rearrange_runtime[i])
-    #     model.tool.destroy_model(model.decoder_main_handle)
-    #     model.tool.destroy_model(model.decoder_post_handle)
-    #     model.tool.destroy_model(model.decoder_loop_handle)
-    #     for i in range(model.dims.n_text_layer * 2):
-    #         model.tool.destroy_model(model.kvcache_rearrange_handle[i])
-    #     model.tool.free_bmrt(model.bmrt1)
-    #     model.tool.free_bmrt(model.bmrt2)
-    #     model.tool.free_bmrt(model.bmrt3)
-    #     for i in range(model.dims.n_text_layer * 2):
-    #         model.tool.destroy_model(model.kvcache_rearrange_bmrt[i])
-        # model.tool.free_bmhandle(model.handle)
-
-if __name__ == "__main__":
-    cli()
