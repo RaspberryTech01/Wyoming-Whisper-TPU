@@ -35,7 +35,7 @@ class FasterWhisperEventHandler(AsyncEventHandler):
         **kwargs,
     ) -> None:
         # # Weird problem reader and writer, had to extract separately
-        reader_writer, *rest = args
+        reader_writer, *_ = args
         writer = reader_writer
         reader = reader_writer._reader
 
@@ -55,7 +55,6 @@ class FasterWhisperEventHandler(AsyncEventHandler):
         
 
     async def handle_event(self, event: Event) -> bool:
-        print("HANDLE")
         if AudioChunk.is_type(event.type):
             chunk = AudioChunk.from_event(event)
 
@@ -79,32 +78,22 @@ class FasterWhisperEventHandler(AsyncEventHandler):
             self._wav_file = None
 
             async with self.model_lock:
+                # Initialise variables
                 self.model.init_cnt()
-                print("IN TEXT END1")
-                print(self.cli_args)
+                # Run the transcriber
                 segments = transcribe(self.model, self._wav_path, **self.cli_args)
-                print("SEGMENTS")
                 print(segments)
-              # result = transcribe(self.model, self._wav_path, temperature=temperature, **args)
-              
-              # segments, _info = self.model.transcribe(
-              #     self._wav_path,
-              #     beam_size=self.cli_args.beam_size,
-              #     language=self._language,
-              #     initial_prompt=self.initial_prompt,
-              # )
-                print("IN TEXT END2")
 
+                # Extract text from dict
                 text = segments["text"]
                 _LOGGER.info(text)
 
+                # Write to Wyoming protocol
                 await self.write_event(Transcript(text=text).event())
                 _LOGGER.debug("Completed request")
 
                 # Reset
                 self._language = self.cli_args["language"]
-                self
-                print("HANDLE2")
                 return False
 
         if Transcribe.is_type(event.type):
@@ -112,14 +101,12 @@ class FasterWhisperEventHandler(AsyncEventHandler):
             if transcribe_event.language:
                 self._language = transcribe_event.language
                 _LOGGER.debug("Language set to %s", transcribe_event.language)
-            print("HANDLE3")
             return True
 
-        print("HANDLE4")
         if Describe.is_type(event.type):
             print(self.wyoming_info_event)
             await self.write_event(self.wyoming_info_event)
             _LOGGER.debug("Sent info")
             return True
-        print("HANDLE5")
+
         return True

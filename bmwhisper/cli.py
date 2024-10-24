@@ -1,6 +1,5 @@
 import argparse
 import asyncio
-import os
 import warnings
 import time
 
@@ -20,20 +19,16 @@ from .utils import (
 )
 from .version import __version__
 
-
 async def run_cli() -> None:
     start_time = time.time()
     from . import available_models
 
     # fmt: off
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("audio", nargs="+", type=str, help="audio file(s) to transcribe")
     parser.add_argument("--model", default="small", choices=available_models(), help="name of the Whisper model to use")
     parser.add_argument("--model_dir", type=str, default=None, help="the path to save model files; uses ~/.cache/whisper by default")
     parser.add_argument("--bmodel_dir", type=str, default="./bmodel", help="the path to save model files; uses ./bmodel by default")
     # parser.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu", help="device to use for PyTorch inference")
-    parser.add_argument("--output_dir", "-o", type=str, default=".", help="directory to save the outputs")
-    parser.add_argument("--output_format", "-f", type=str, default="all", choices=["txt", "vtt", "srt", "tsv", "json", "all"], help="format of the output file; if not specified, all available formats will be produced")
     parser.add_argument("--verbose", type=str2bool, default=True, help="whether to print out the progress and debug messages")
 
     parser.add_argument("--task", type=str, default="transcribe", choices=["transcribe", "translate"], help="whether to perform X->X speech recognition ('transcribe') or X->English translation ('translate')")
@@ -62,16 +57,11 @@ async def run_cli() -> None:
     parser.add_argument("--threads", type=optional_int, default=0, help="number of threads used by torch for CPU inference; supercedes MKL_NUM_THREADS/OMP_NUM_THREADS")
     parser.add_argument("--padding_size", type=optional_int, default=448, help="max pre-allocation size for the key-value cache")
     parser.add_argument("--chip_mode", default="pcie", choices=["pcie", "soc"], help="name of the Whisper model to use")
-    parser.add_argument("--loop_profile", action="store_true", help="whether to print loop times")
     # fmt: on
 
     args = parser.parse_args()
     args_dict = parser.parse_args().__dict__
     args.model_name = args.model
-    output_dir: str = args.output_dir
-    output_format: str = args.output_format
-    loop_profile = args.loop_profile
-    os.makedirs(output_dir, exist_ok=True)
 
     model_name = args.model_name
     if model_name.endswith(".en") and args.language not in {"en", "English"}:
@@ -90,20 +80,9 @@ async def run_cli() -> None:
     if (threads := args.threads) > 0:
         torch.set_num_threads(threads)
 
-    
-
     model = load_model(args) 
-    # pop_list = ["model_name", "model_dir", "bmodel_dir", "chip_mode"]
-    # for arg in pop_list:
-    #     args.pop(arg)
 
-    # We need to insert Wyoming protocol similar to wyoming-faster-whisper
-    
-    print("TEST")
-    print(tuple(LANGUAGES.keys()))
-    print(type(LANGUAGES.keys()))
-    
-    
+    # We need to insert Wyoming protocol similar to wyoming-faster-whisper    
     wyoming_info = Info(
         asr=[
             AsrProgram(
@@ -132,15 +111,15 @@ async def run_cli() -> None:
         ],
     )
     
-    pop_list = ["model", "model_dir", "bmodel_dir", "output_dir", "output_format", "chip_mode", "audio", "temperature_increment_on_fallback", "threads", "loop_profile", "max_line_width", "max_line_count", "highlight_words"]
+    pop_list = ["model", "model_dir", "bmodel_dir", "chip_mode", "temperature_increment_on_fallback", "threads", "max_line_width", "max_line_count", "highlight_words"]
     for arg in pop_list:
         args_dict.pop(arg)
     
     # Load model
-
+    print("Starting Wyoming Server")
     server = AsyncServer.from_uri('tcp://0.0.0.0:10300')
-    # _LOGGER.info("Ready")
     model_lock = asyncio.Lock()
+    
     await server.run(
         partial(
             FasterWhisperEventHandler,
@@ -152,34 +131,6 @@ async def run_cli() -> None:
             initial_prompt=args.initial_prompt,
         )
     )
-
-    # writer = get_writer(output_format, output_dir)
-    # word_options = ["highlight_words", "max_line_count", "max_line_width"]
-    # if not args["word_timestamps"]:
-    #     for option in word_options:
-    #         if args[option]:
-    #             parser.error(f"--{option} requires --word_timestamps True")
-    # if args["max_line_count"] and not args["max_line_width"]:
-    #     warnings.warn("--max_line_count has no effect without --max_line_width")
-    # writer_args = {arg: args.pop(arg) for arg in word_options}
-
-    # for audio_path in args.pop("audio"):
-    #     model.init_cnt()
-    #     print()
-    #     print("{:=^100}".format(f" Start "))
-    #     print(f"### audio_path: {os.path.basename(audio_path)}")
-    #     audio_start_time = time.time()
-    #     result = transcribe(model, audio_path, temperature=temperature, **args)
-    #     writer(result, audio_path, writer_args)
-    #     cpu_time = time.time() - audio_start_time - model.time
-    #     if loop_profile:
-    #         model.print_cnt()
-    #     print()
-    #     print(f"Total tpu inference time: {model.time}s")
-    #     print(f"Total cpu inference time: {cpu_time}s")
-    #     print(f"Total time: {cpu_time + model.time}s")
-    #     model.time = 0
-    # print("{:-^100}".format(f"  Total time: {time.time() - start_time} seconds "))
 
 # -----------------------------------------------------------------------------
 
